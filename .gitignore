@@ -1,0 +1,25 @@
+# 编译产物
+out/
+bin/
+build/
+*.class
+*.jar
+*.war
+
+# 日志
+*.log
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini
