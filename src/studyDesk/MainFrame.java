@@ -1,23 +1,26 @@
 package studyDesk;
 
-import javax.swing.*;
 import java.awt.*;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
+import javax.swing.*;
 
 /**
  * 主窗口：固定四区结构 + 底部状态栏。
  * 左：一级导航；顶：状态栏；中：独立滚动的内容区；右：可折叠侧栏（AI 占位）；底：状态栏。
  */
 public final class MainFrame extends JFrame implements PageContext {
+
+    private static final long serialVersionUID = 1L;
+
     private final TopBar topBar = new TopBar();
     private final BottomBar bottomBar = new BottomBar();
     private final JPanel navPanel = new JPanel();
     private final Map<PageId, JButton> navButtons = new EnumMap<>(PageId.class);
-    private final JPanel contentCards = new JPanel(new CardLayout());
+    private final PageHost contentCards = new PageHost(new CardLayout());
     private final JScrollPane contentScroll;
     private final JPanel sidePanel = new JPanel();
     private final Map<PageId, Page> pages = new EnumMap<>(PageId.class);
@@ -35,10 +38,49 @@ public final class MainFrame extends JFrame implements PageContext {
         }
     }
 
+    /**
+     * 内容区宿主。CardLayout 的偏好宽度取所有页面最大值，
+     * 直接放进滚动面板会让每个页面都多出一条横向滚动条，
+     * 这里让内容宽度始终跟随视口，横向只保留垂直滚动。
+     */
+    private static final class PageHost extends JPanel implements Scrollable {
+
+        private static final long serialVersionUID = 1L;
+
+        PageHost(java.awt.LayoutManager layout) {
+            super(layout);
+        }
+
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+
+        @Override
+        public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return 16;
+        }
+
+        @Override
+        public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return Math.max(visibleRect.height - 60, 60);
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            return false;
+        }
+    }
+
     public MainFrame() {
         super("StudyDesk 个人学习平台");
         setSize(1280, 800);
-        setMinimumSize(new Dimension(1100, 700));
+        setMinimumSize(new Dimension(1180, 720));
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
@@ -50,6 +92,7 @@ public final class MainFrame extends JFrame implements PageContext {
         contentScroll = new JScrollPane(contentCards);
         contentScroll.setBorder(null);
         contentScroll.getVerticalScrollBar().setUnitIncrement(16);
+        contentScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 
         add(topBar, BorderLayout.NORTH);
         add(navPanel, BorderLayout.WEST);
@@ -57,16 +100,38 @@ public final class MainFrame extends JFrame implements PageContext {
         add(sidePanel, BorderLayout.EAST);
         add(bottomBar, BorderLayout.SOUTH);
 
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent e) {
+                Store.get().save();
+            }
+        });
+
         navigateTo(PageId.TODAY, new HashMap<>());
     }
 
     private void initPages() {
-        for (PageId id : PageId.values()) {
-            PlaceholderPage page = new PlaceholderPage(id);
+        BasePage[] all = {
+                new TodayPage(),
+                new SchedulePage(),
+                new CoursesPage(),
+                new ExercisesPage(),
+                new NotesPage(),
+                new PlansPage(),
+                new SettingsPage()
+        };
+        for (BasePage page : all) {
             page.bind(this);
-            pages.put(id, page);
-            contentCards.add(page.getView(), id.name());
+            pages.put(page.getId(), page);
+            contentCards.add(page.getView(), page.getId().name());
         }
+        // 任何数据变更后同步顶部周次与底部保存状态
+        Store.get().addListener(() -> {
+            topBar.setWeek(Store.get().currentWeek());
+            bottomBar.setSaveState(Store.get().saveState());
+        });
+        topBar.setWeek(Store.get().currentWeek());
+        bottomBar.setSaveState(Store.get().saveState());
     }
 
     private void initNav() {

@@ -1,7 +1,7 @@
 package studyDesk;
 
-import javax.swing.*;
 import java.util.Map;
+import javax.swing.*;
 
 /**
  * 主页面契约。

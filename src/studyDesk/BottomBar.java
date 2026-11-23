@@ -1,10 +1,13 @@
 package studyDesk;
 
-import javax.swing.*;
 import java.awt.*;
+import javax.swing.*;
 
 /** 底部状态栏：本地运行模式、数据保存状态、AI 服务状态占位。 */
 public final class BottomBar extends JPanel {
+
+    private static final long serialVersionUID = 1L;
+
     private final JLabel status = new JLabel("本地运行模式");
     private final JLabel save = new JLabel("数据保存：未变更");
     private final JLabel ollama = new JLabel("AI 服务：未启用");

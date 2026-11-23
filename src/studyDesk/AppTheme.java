@@ -1,8 +1,8 @@
 package studyDesk;
 
+import java.awt.*;
 import javax.swing.*;
 import javax.swing.border.Border;
-import java.awt.*;
 
 /**
  * 全局样式规范：8px 栅格、16px 卡片间距、24px 页面内边距。
@@ -20,10 +20,18 @@ public final class AppTheme {
     public static final Color TEXT_SECONDARY = new Color(0x6B, 0x72, 0x80);
     public static final Color BORDER = new Color(0xE5, 0xE7, 0xEB);
     public static final Color NAV_ACTIVE = new Color(0xE8, 0xF0, 0xFE);
+    /** 状态色：完成 / 提醒 / 逾期。 */
+    public static final Color SUCCESS = new Color(0x10, 0xB9, 0x81);
+    public static final Color WARN = new Color(0xF5, 0x9E, 0x0B);
+    public static final Color DANGER = new Color(0xEF, 0x44, 0x44);
+    /** 浅底色，用于标签、空状态、统计块。 */
+    public static final Color SOFT = new Color(0xF1, 0xF4, 0xF9);
 
     public static final Font FONT_TITLE = new Font("Microsoft YaHei", Font.BOLD, 20);
+    public static final Font FONT_H2 = new Font("Microsoft YaHei", Font.BOLD, 15);
     public static final Font FONT_BODY = new Font("Microsoft YaHei", Font.PLAIN, 14);
     public static final Font FONT_SMALL = new Font("Microsoft YaHei", Font.PLAIN, 12);
+    public static final Font FONT_NUM = new Font("Microsoft YaHei", Font.BOLD, 26);
 
     private AppTheme() {
     }

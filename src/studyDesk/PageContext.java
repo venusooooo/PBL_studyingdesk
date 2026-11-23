@@ -1,7 +1,7 @@
 package studyDesk;
 
-import javax.swing.*;
 import java.util.Map;
+import javax.swing.*;
 
 /** 页面向主窗口发起跳转 / 弹窗 / 状态更新的统一入口。 */
 public interface PageContext {

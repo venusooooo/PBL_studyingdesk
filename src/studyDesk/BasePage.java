@@ -1,8 +1,9 @@
 package studyDesk;
 
-import javax.swing.*;
 import java.awt.*;
+import java.util.HashMap;
 import java.util.Map;
+import javax.swing.*;
 
 /**
  * 页面基类，固定"页头 + 卡片网格内容区"结构。
@@ -51,6 +52,12 @@ public abstract class BasePage implements Page {
         return context;
     }
 
+    /** 弹窗需要一个 owner 窗口，这里统一取主窗口。 */
+    protected final Frame owner() {
+        Window w = SwingUtilities.getWindowAncestor(getView());
+        return w instanceof Frame ? (Frame) w : null;
+    }
+
     @Override
     public final JComponent getView() {
         return root;
@@ -67,9 +74,15 @@ public abstract class BasePage implements Page {
 
     /** 按行列把卡片放入网格，间距使用全局 16px 规范。 */
     protected final void addCard(JComponent card, int row, int col) {
+        addCard(card, row, col, 1);
+    }
+
+    /** 指定跨列数，用于需要横跨整行（如统计条）的卡片。 */
+    protected final void addCard(JComponent card, int row, int col, int colSpan) {
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridx = col;
         gbc.gridy = row;
+        gbc.gridwidth = Math.max(1, colSpan);
         gbc.weightx = 1;
         gbc.fill = GridBagConstraints.BOTH;
         gbc.anchor = GridBagConstraints.NORTHWEST;
@@ -78,15 +91,39 @@ public abstract class BasePage implements Page {
         cardGrid.add(card, gbc);
     }
 
-    /** 子类在此构建自己的卡片内容，只调用一次。 */
+    /** 子类在此构建自己的卡片内容。会被反复调用，因此只创建组件、不写一次性状态。 */
     protected abstract void buildContent();
+
+    /** 子类可覆写，用于处理带参跳转（例如从今日面板跳到错题页并带上筛选条件）。 */
+    protected void onShowPage(Map<String, Object> params) {
+    }
 
     @Override
     public final void onShow(Map<String, Object> params) {
         if (!built) {
             buildContent();
             built = true;
+        } else {
+            // 数据可能在别的页面被改过，每次进入都重画一遍，保证看到的是最新数据。
+            rebuild();
         }
         headerTitle.setText(getTitle());
+        onShowPage(params == null ? new HashMap<>() : params);
+    }
+
+    /** 数据变化后由页面自己调用，重画卡片区。 */
+    protected final void refresh() {
+        if (built) {
+            rebuild();
+        }
+    }
+
+    private void rebuild() {
+        cardGrid.removeAll();
+        buildContent();
+        cardGrid.revalidate();
+        cardGrid.repaint();
+        root.revalidate();
+        root.repaint();
     }
 }

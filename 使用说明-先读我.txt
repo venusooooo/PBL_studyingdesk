@@ -1,0 +1,60 @@
+﻿========================================================
+ StudyDesk 源码工程（这就是 IDE 里要打开的那个文件夹）
+========================================================
+
+【一句话】把整个 "StudyDesk-源码工程" 文件夹丢进 IDEA，点绿三角就能跑。
+          里面没有任何 exe、没有 dll，只有 .java 源码。
+
+--------------------------------------------------------
+ 第一步：用 IDEA 打开（推荐）
+--------------------------------------------------------
+1. IntelliJ IDEA 菜单 File -> Open
+2. 选中 "StudyDesk-源码工程" 这个【文件夹】（不是里面的 src）
+3. 点 OK，等右下角索引跑完
+4. 左侧 Project 面板里 src 会显示成蓝色文件夹
+   展开后能看到 studyDesk 包，里面有 30 个 .java 文件
+5. 右上角运行配置选 "StudyDesk"，点绿色三角
+
+如果 IDEA 提示 Project SDK is not defined：
+  File -> Project Structure -> Project -> SDK
+  选一个 JDK 11 或更高版本即可（只需设置一次）。
+
+--------------------------------------------------------
+ 第二步：目录里都有什么
+--------------------------------------------------------
+src/studyDesk/          30 个 .java 源码（唯一真正的程序代码）
+  StudyDeskApp.java       程序入口，有 main 方法
+  MainFrame.java          主窗口
+  TodayPage / SchedulePage / CoursesPage /
+  ExercisesPage / NotesPage / PlansPage /
+  SettingsPage            七个功能页面
+  Store.java              数据仓库（读写 JSON）
+  Course / Lesson / Exercise / Note /
+  Task / Plan / FocusRecord   数据模型
+  Json.java               手写 JSON 解析
+  Ui.java / AppTheme.java 界面工具与配色
+  ...
+.idea/                  IDEA 工程配置（别删，删了就要手动配 SDK 和源码根）
+StudyDesk.iml           模块描述，标记 src 为源码根
+StudyDesk.jar           已经编译好的程序，可 java -jar 直接跑
+docs/                   迭代说明文档 + 7 张界面截图
+README.md               完整项目说明
+build.bat / start.bat   可选，Windows 下不装 IDE 时的快捷启动
+
+--------------------------------------------------------
+ 第三步：不想用 IDEA 的话
+--------------------------------------------------------
+命令行（需要 JDK 11+）：
+    javac -encoding UTF-8 -d out src/studyDesk/*.java
+    java -cp out studyDesk.StudyDeskApp
+
+或者直接双击 StudyDesk.jar / start.bat。
+
+--------------------------------------------------------
+ 数据存在哪
+--------------------------------------------------------
+    C:\Users\<你的用户名>\.studydesk\data.json
+删掉这个文件夹，下次启动会重新生成示例数据。
+
+注意：本包里【没有】StudyDesk.exe。想要免安装双击版，
+     请用另一个压缩包 "2-StudyDesk-免安装运行版"。

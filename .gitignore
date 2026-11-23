@@ -9,9 +9,14 @@ build/
 # 日志
 *.log
 
-# IDE
-.idea/
-*.iml
+# IDE —— 保留工程配置（.idea 下的公共部分和 *.iml），只忽略个人工作区状态
+.idea/workspace.xml
+.idea/shelf/
+.idea/usage.statistics.xml
+.idea/dictionaries/
+.idea/httpRequests/
+.idea/dataSources/
+.idea/dataSources.local.xml
 *.ipr
 *.iws
 .vscode/
@@ -23,3 +28,7 @@ build/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# 构建中间文件
+sources.txt
+dist/
