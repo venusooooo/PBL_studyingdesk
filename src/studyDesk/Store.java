@@ -1,10 +1,17 @@
 package studyDesk;
 
 import java.io.IOException;
+import java.net.URL;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
@@ -29,6 +36,8 @@ public final class Store {
 
     private final Path dir;
     private final Path file;
+    /** 上一个版本的副本，主文件损坏时用于恢复。 */
+    private final Path backupFile;
     private final List<Runnable> listeners = new ArrayList<>();
 
     private long seq = 1;
@@ -46,10 +55,62 @@ public final class Store {
     private String saveState = "未变更";
 
     private Store() {
-        Path home = Paths.get(System.getProperty("user.home", "."));
-        dir = home.resolve(".studydesk");
+        dir = resolveDataDir();
         file = dir.resolve("data.json");
+        backupFile = dir.resolve("data.bak.json");
         load();
+    }
+
+    /**
+     * 数据目录优先级：
+     * 1. 启动参数 {@code -Dstudydesk.home=<dir>}，用于便携版或切换多套数据；
+     * 2. 程序所在目录（或上一级）存在 data 文件夹时进入便携模式；
+     * 3. 默认 用户目录/.studydesk。
+     */
+    private static Path resolveDataDir() {
+        String custom = System.getProperty("studydesk.home", "").trim();
+        if (!custom.isEmpty()) {
+            try {
+                return Paths.get(custom).toAbsolutePath().normalize();
+            } catch (InvalidPathException e) {
+                System.err.println("studydesk.home 不是合法路径，改用默认目录：" + custom);
+            }
+        }
+        Path portable = portableDataDir();
+        if (portable != null) {
+            return portable;
+        }
+        return Paths.get(System.getProperty("user.home", ".")).resolve(".studydesk");
+    }
+
+    /**
+     * 便携模式探测：jar / class 所在目录及其上一级里若有 data 文件夹，就用它。
+     * jpackage 的 app-image 布局是 exe 在根、jar 在 app/ 下，所以要看上一级。
+     */
+    private static Path portableDataDir() {
+        try {
+            URL location = Store.class.getProtectionDomain().getCodeSource().getLocation();
+            if (location == null) {
+                return null;
+            }
+            Path base = Paths.get(location.toURI());
+            if (!Files.isDirectory(base)) {
+                base = base.getParent();
+            }
+            if (base == null) {
+                return null;
+            }
+            Path parent = base.getParent();
+            Path[] candidates = {base.resolve("data"), parent == null ? null : parent.resolve("data")};
+            for (Path candidate : candidates) {
+                if (candidate != null && Files.isDirectory(candidate)) {
+                    return candidate.toAbsolutePath().normalize();
+                }
+            }
+        } catch (Exception ignored) {
+            // 取不到程序位置就退回默认目录，不影响启动
+        }
+        return null;
     }
 
     public static synchronized Store get() {
@@ -67,6 +128,11 @@ public final class Store {
 
     public Path dataDir() {
         return dir;
+    }
+
+    /** 上一版数据的备份文件，主文件损坏时会被自动用来恢复。 */
+    public Path backupFile() {
+        return backupFile;
     }
 
     public String saveState() {
@@ -104,13 +170,44 @@ public final class Store {
         root.put("tasks", mapList(tasks, Task::toMap));
         root.put("plans", mapList(plans, Plan::toMap));
         root.put("focus", mapList(focusRecords, FocusRecord::toMap));
+        byte[] bytes = Json.write(root).getBytes(StandardCharsets.UTF_8);
+        Path tmp = dir.resolve("data.json.tmp");
         try {
             Files.createDirectories(dir);
-            Files.writeString(file, Json.write(root), StandardCharsets.UTF_8);
+            // 先写临时文件并强制刷盘，再原子替换：写到一半崩溃也不会破坏 data.json。
+            try (FileChannel channel = FileChannel.open(tmp, StandardOpenOption.CREATE,
+                    StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
+                channel.write(ByteBuffer.wrap(bytes));
+                channel.force(true);
+            }
+            keepPreviousVersion();
+            moveAtomic(tmp, file);
             saveState = "已保存 " + LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"));
         } catch (IOException e) {
             saveState = "保存失败：" + e.getMessage();
             System.err.println("数据保存失败：" + e);
+        }
+    }
+
+    /** 把当前 data.json 留一份成 data.bak.json，备份失败不阻断本次保存。 */
+    private void keepPreviousVersion() {
+        if (!Files.exists(file)) {
+            return;
+        }
+        try {
+            Files.copy(file, backupFile, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            System.err.println("备份上一版数据失败（不影响保存）：" + e);
+        }
+    }
+
+    private static void moveAtomic(Path from, Path to) throws IOException {
+        try {
+            Files.move(from, to, StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            // 个别网络盘 / 老文件系统不支持原子移动，退化为普通替换
+            Files.move(from, to, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
@@ -120,8 +217,43 @@ public final class Store {
             save();
             return;
         }
+        if (!readFrom(file)) {
+            recover();
+            return;
+        }
+        if (courses.isEmpty() && lessons.isEmpty() && tasks.isEmpty()) {
+            seed();
+            save();
+        }
+    }
+
+    /**
+     * 主文件读不出来时：先把它改名留档，再尝试用 data.bak.json 恢复，
+     * 备份也不可用才重建示例数据。任何时候都不静默覆盖用户原始文件。
+     */
+    private void recover() {
+        System.err.println("主数据文件读取失败，尝试用备份恢复");
         try {
-            String text = Files.readString(file, StandardCharsets.UTF_8);
+            Files.move(file, dir.resolve("data.broken.bak"), StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            System.err.println("保留损坏文件失败：" + e);
+        }
+        clearMemory();
+        if (Files.exists(backupFile) && readFrom(backupFile)) {
+            save();
+            saveState = "已从备份恢复（损坏文件另存为 data.broken.bak）";
+            return;
+        }
+        clearMemory();
+        seed();
+        save();
+        saveState = "数据损坏且无可用备份，已重建示例数据";
+    }
+
+    /** 解析指定文件并填充内存，成功返回 true；失败时内存可能被部分填充，由调用方 clearMemory()。 */
+    private boolean readFrom(Path source) {
+        try {
+            String text = Files.readString(source, StandardCharsets.UTF_8);
             Map<String, Object> root = Json.map(Json.parse(text));
             seq = Json.lng(root, "seq", 1);
             termStart = Json.str(root, "termStart", "");
@@ -148,22 +280,10 @@ public final class Store {
                 focusRecords.add(FocusRecord.fromMap(Json.map(o)));
             }
             saveState = "已加载本地数据";
+            return true;
         } catch (Exception e) {
-            // 文件损坏时不要直接覆盖用户数据：先备份成 .bak，再用示例数据启动。
-            System.err.println("数据文件读取失败，已备份并重建：" + e);
-            try {
-                Files.copy(file, dir.resolve("data.broken.bak"),
-                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-            } catch (IOException ignored) {
-                // 备份失败不影响继续启动
-            }
-            clearMemory();
-            seed();
-            save();
-        }
-        if (courses.isEmpty() && lessons.isEmpty() && tasks.isEmpty()) {
-            seed();
-            save();
+            System.err.println("读取 " + source.getFileName() + " 失败：" + e);
+            return false;
         }
     }
 
@@ -288,16 +408,22 @@ public final class Store {
 
     /**
      * 记录一次复习。
-     * remembered=true 按艾宾浩斯间隔推后下次复习日期；false 则明天再来一次并退回未掌握。
+     * remembered=true 按艾宾浩斯间隔推后下次复习日期；
+     * false 则退回未掌握、明天再来，并把进度退一格。
+     * <p>
+     * 注意：答错时不能让 reviewCount 继续增长，否则"错两次再答对"会直接
+     * 取到 7 天的间隔（reviewCount 越大间隔越长），刚学会的题会被推得太远。
      */
     public void review(Exercise e, boolean remembered) {
-        e.reviewCount++;
         e.lastReview = Dates.today();
         if (remembered) {
+            e.reviewCount++;
             int idx = Math.min(e.reviewCount, REVIEW_INTERVALS.length) - 1;
             e.nextReview = LocalDate.now().plusDays(REVIEW_INTERVALS[idx]).toString();
             e.mastery = e.reviewCount >= 3 ? 2 : 1;
         } else {
+            e.lapses++;
+            e.reviewCount = Math.max(0, e.reviewCount - 1);
             e.mastery = 0;
             e.nextReview = LocalDate.now().plusDays(1).toString();
         }
@@ -664,6 +790,7 @@ public final class Store {
         e2.content = "用等价无穷小求极限。";
         e2.answer = "sin3x ~ 3x，所以原式 = 3。";
         e2.reason = "等价无穷小替换时漏乘系数 3";
+        e2.lapses = 1;
         e2.mastery = 0;
         e2.nextReview = today;
 

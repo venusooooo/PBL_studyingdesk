@@ -202,8 +202,12 @@ public final class ExercisesPage extends BasePage {
         line2.setOpaque(false);
         String reason = e.reason == null || e.reason.isBlank() ? "未记录错因" : "错因：" + e.reason;
         line2.add(Ui.label(reason, AppTheme.FONT_SMALL, AppTheme.TEXT_SECONDARY));
-        line2.add(Ui.label("复习 " + e.reviewCount + " 次 · 下次 " + Dates.friendly(e.nextReview),
-                AppTheme.FONT_SMALL, new Color(0x9A, 0xA1, 0xAE)));
+        String meta = "复习 " + e.reviewCount + " 次";
+        if (e.lapses > 0) {
+            meta += " · 遗忘 " + e.lapses + " 次";
+        }
+        meta += " · 下次 " + Dates.friendly(e.nextReview);
+        line2.add(Ui.label(meta, AppTheme.FONT_SMALL, new Color(0x9A, 0xA1, 0xAE)));
 
         left.add(line1, BorderLayout.NORTH);
         left.add(line2, BorderLayout.SOUTH);

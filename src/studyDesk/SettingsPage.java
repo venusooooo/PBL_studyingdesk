@@ -43,7 +43,8 @@ public final class SettingsPage extends BasePage {
         JPanel pathBody = new JPanel(new BorderLayout(0, 8));
         pathBody.setOpaque(false);
         pathBody.add(pathRow, BorderLayout.NORTH);
-        JLabel pathState = Ui.muted("当前状态：" + store.saveState());
+        JLabel pathState = Ui.muted("当前状态：" + store.saveState()
+                + " · 上一版自动备份为 data.bak.json");
         pathBody.add(pathState, BorderLayout.SOUTH);
         addCard(Ui.card("数据存储", null, pathBody), 0, 0);
 

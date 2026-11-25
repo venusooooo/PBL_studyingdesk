@@ -20,6 +20,8 @@ public final class Exercise {
     public String reason = "";
     public int mastery;
     public int reviewCount;
+    /** 遗忘次数：复习时答错的累计次数，只用于统计与复盘，不参与间隔计算。 */
+    public int lapses;
     public String nextReview = "";
     public String createdAt = "";
     public String lastReview = "";
@@ -69,6 +71,7 @@ public final class Exercise {
         m.put("reason", reason);
         m.put("mastery", mastery);
         m.put("reviewCount", reviewCount);
+        m.put("lapses", lapses);
         m.put("nextReview", nextReview);
         m.put("createdAt", createdAt);
         m.put("lastReview", lastReview);
@@ -85,6 +88,7 @@ public final class Exercise {
         e.reason = Json.str(m, "reason", "");
         e.mastery = Json.integer(m, "mastery", 0);
         e.reviewCount = Json.integer(m, "reviewCount", 0);
+        e.lapses = Json.integer(m, "lapses", 0);
         e.nextReview = Json.str(m, "nextReview", "");
         e.createdAt = Json.str(m, "createdAt", "");
         e.lastReview = Json.str(m, "lastReview", "");
