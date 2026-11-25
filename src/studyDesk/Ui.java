@@ -403,4 +403,58 @@ final class Ui {
         c.setMaximumSize(new Dimension(Integer.MAX_VALUE, c.getPreferredSize().height));
         return c;
     }
+
+    // ========================= 撤销提示 =========================
+
+    private static JWindow toastWindow;
+
+    /**
+     * 在窗口底部浮出一条深色提示，附带"撤销"，5 秒后自动消失。
+     * 比每次删除都弹确认框更顺手：删错了还能补救，没删错也不用多点一次。
+     */
+    static void undoToast(Component parent, String message, Runnable onUndo) {
+        Window owner = parent == null ? null : SwingUtilities.getWindowAncestor(parent);
+        if (owner == null || !owner.isShowing()) {
+            return;
+        }
+        if (toastWindow != null) {
+            toastWindow.dispose();
+        }
+
+        JWindow window = new JWindow(owner);
+        JPanel panel = new JPanel(new BorderLayout(AppTheme.GRID, 0));
+        panel.setBackground(new Color(0x1F, 0x29, 0x37));
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 16, 10, 8));
+
+        JLabel label = new JLabel(message);
+        label.setFont(AppTheme.FONT_SMALL);
+        label.setForeground(Color.WHITE);
+
+        JButton undo = new JButton("撤销");
+        undo.setFont(AppTheme.FONT_SMALL);
+        undo.setForeground(new Color(0x9E, 0xC1, 0xFF));
+        undo.setBorderPainted(false);
+        undo.setContentAreaFilled(false);
+        undo.setFocusPainted(false);
+        undo.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        undo.addActionListener(e -> {
+            window.dispose();
+            onUndo.run();
+        });
+
+        panel.add(label, BorderLayout.CENTER);
+        panel.add(undo, BorderLayout.EAST);
+        window.setContentPane(panel);
+        window.pack();
+        Point origin = owner.getLocationOnScreen();
+        window.setLocation(origin.x + (owner.getWidth() - window.getWidth()) / 2,
+                origin.y + owner.getHeight() - window.getHeight() - 48);
+        window.setAlwaysOnTop(true);
+        window.setVisible(true);
+
+        toastWindow = window;
+        javax.swing.Timer closer = new javax.swing.Timer(5000, e -> window.dispose());
+        closer.setRepeats(false);
+        closer.start();
+    }
 }

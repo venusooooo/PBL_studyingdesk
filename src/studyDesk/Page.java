@@ -29,4 +29,8 @@ public interface Page {
     /** 返回或带参跳转时恢复状态。 */
     default void restoreState(Map<String, Object> state) {
     }
+
+    /** 按快捷键 N 时触发"新建"，不支持的页面保持空实现。 */
+    default void onNew() {
+    }
 }

@@ -1,7 +1,6 @@
 package studyDesk;
 
 import java.awt.*;
-import java.util.ArrayList;
 import java.util.List;
 import javax.swing.*;
 import javax.swing.border.Border;
@@ -9,12 +8,14 @@ import javax.swing.border.Border;
 /** 课程与课时：课程的增删改，以及每门课的课时 / 错题 / 任务概况。 */
 public final class CoursesPage extends BasePage {
 
-    private static final String[] PALETTE = {"#2F6FED", "#10B981", "#F59E0B", "#8B5CF6",
-            "#EC4899", "#06B6D4", "#EF4444", "#84CC16"};
-
     @Override
     public PageId getId() {
         return PageId.COURSES;
+    }
+
+    @Override
+    protected void onNewAction() {
+        openEditor(null);
     }
 
     @Override
@@ -122,6 +123,11 @@ public final class CoursesPage extends BasePage {
                 store.removeCourse(c);
                 context().setStatus("已删除课程：" + c.name);
                 refresh();
+                Ui.undoToast(getView(), "已删除课程《" + c.name + "》", () -> {
+                    Store.get().undoDelete();
+                    refresh();
+                    context().setStatus("已撤销删除");
+                });
             }
         });
         actions.add(edit);
@@ -136,46 +142,11 @@ public final class CoursesPage extends BasePage {
 
     private void openEditor(Course course) {
         boolean creating = course == null;
-        FormDialog dialog = new FormDialog(owner(), creating ? "新建课程" : "编辑课程", "保存");
-        JTextField name = dialog.addText("课程名", creating ? "" : course.name);
-        JTextField teacher = dialog.addText("任课教师", creating ? "" : course.teacher);
-        JTextArea note = dialog.addArea("备注", creating ? "" : course.note, 3);
-
-        List<Course> existing = new ArrayList<>(Store.get().courses());
-        String[] colors = {"蓝色", "绿色", "橙色", "紫色", "粉色", "青色", "红色", "青柠"};
-        int selectedColor = 0;
-        for (int i = 0; i < PALETTE.length; i++) {
-            if (!creating && PALETTE[i].equalsIgnoreCase(course.color)) {
-                selectedColor = i;
-            }
-        }
-        if (creating) {
-            selectedColor = existing.size() % PALETTE.length;
-        }
-        JComboBox<String> color = dialog.addCombo("主题色", colors, selectedColor);
-
-        if (!dialog.open(getView())) {
+        Course saved = CourseEditor.open(getView(), course);
+        if (saved == null) {
             return;
         }
-        String trimmed = name.getText().trim();
-        if (trimmed.isEmpty()) {
-            FormDialog.toast(getView(), "课程名不能为空");
-            return;
-        }
-        String hex = PALETTE[Math.max(0, color.getSelectedIndex())];
-        if (creating) {
-            Course c = new Course(trimmed, teacher.getText().trim(), hex);
-            c.note = note.getText().trim();
-            Store.get().addCourse(c);
-            context().setStatus("已新建课程：" + trimmed);
-        } else {
-            course.name = trimmed;
-            course.teacher = teacher.getText().trim();
-            course.color = hex;
-            course.note = note.getText().trim();
-            Store.get().changed();
-            context().setStatus("已更新课程：" + trimmed);
-        }
+        context().setStatus((creating ? "已新建课程：" : "已更新课程：") + saved.name);
         refresh();
     }
 }

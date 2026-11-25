@@ -9,13 +9,24 @@ import javax.swing.*;
 /** 今日面板：把课表、任务、错题、专注四件事汇总到一屏。 */
 public final class TodayPage extends BasePage {
 
-    private static final int POMODORO_SECONDS = 25 * 60;
+    private static final int FOCUS_SECONDS = 25 * 60;
+    private static final int SHORT_BREAK_SECONDS = 5 * 60;
+    private static final int LONG_BREAK_SECONDS = 15 * 60;
+    /** 每完成 4 个番茄进入一次长休息。 */
+    private static final int ROUNDS_BEFORE_LONG_BREAK = 4;
+
+    private enum Phase { FOCUS, SHORT_BREAK, LONG_BREAK }
 
     private final JLabel timerLabel = Ui.label("25:00", new Font("Consolas", Font.BOLD, 34), AppTheme.TEXT);
+    private final JLabel phaseLabel = Ui.label("专注 25 分钟", AppTheme.FONT_SMALL, AppTheme.TEXT_SECONDARY);
     private final JProgressBar timerBar = Ui.progress(100, AppTheme.PRIMARY);
     private final Timer timer;
 
-    private int remaining = POMODORO_SECONDS;
+    private Phase phase = Phase.FOCUS;
+    private int remaining = FOCUS_SECONDS;
+    private int phaseTotal = FOCUS_SECONDS;
+    /** 本轮已完成的专注个数，决定什么时候长休息。 */
+    private int round;
     private boolean running;
 
     public TodayPage() {
@@ -241,14 +252,20 @@ public final class TodayPage extends BasePage {
         JPanel center = new JPanel();
         center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
         center.setOpaque(false);
-        timerLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        phaseLabel.setFont(AppTheme.FONT_SMALL);
+        phaseLabel.setForeground(phase == Phase.FOCUS ? AppTheme.PRIMARY : AppTheme.SUCCESS);
+        phaseLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
         timerLabel.setFont(new Font("Consolas", Font.BOLD, 34));
+        timerLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
         timerBar.setAlignmentX(Component.CENTER_ALIGNMENT);
+        center.add(phaseLabel);
+        center.add(Box.createVerticalStrut(2));
         center.add(timerLabel);
         center.add(Box.createVerticalStrut(6));
         center.add(timerBar);
 
-        JButton toggle = running ? Ui.ghost("暂停") : Ui.primary("开始专注");
+        String toggleText = running ? "暂停" : (phase == Phase.FOCUS ? "开始专注" : "开始休息");
+        JButton toggle = running ? Ui.ghost(toggleText) : Ui.primary(toggleText);
         toggle.addActionListener(e -> {
             if (running) {
                 pause();
@@ -267,13 +284,23 @@ public final class TodayPage extends BasePage {
         buttons.setOpaque(false);
         buttons.add(toggle);
         buttons.add(reset);
+        if (phase != Phase.FOCUS) {
+            JButton skip = Ui.link("跳过休息");
+            skip.addActionListener(e -> {
+                pause();
+                enter(Phase.FOCUS);
+                refresh();
+            });
+            buttons.add(skip);
+        }
 
         JPanel body = new JPanel(new BorderLayout(0, 8));
         body.setOpaque(false);
         body.add(center, BorderLayout.CENTER);
         body.add(buttons, BorderLayout.SOUTH);
 
-        JLabel info = Ui.muted("今日 " + Store.get().todayFocusMinutes() + " 分钟 · 本周 "
+        JLabel info = Ui.muted("今日 " + Store.get().pomodoroToday() + " 个番茄 · "
+                + Store.get().todayFocusMinutes() + " 分钟 · 本周 "
                 + Store.get().weekFocusMinutes() + " 分钟");
         info.setHorizontalAlignment(SwingConstants.CENTER);
         JPanel wrapper = new JPanel(new BorderLayout(0, 8));
@@ -281,10 +308,10 @@ public final class TodayPage extends BasePage {
         wrapper.add(body, BorderLayout.CENTER);
         wrapper.add(info, BorderLayout.SOUTH);
 
-        return Ui.card("专注计时（25 分钟）", null, wrapper);
+        return Ui.card("专注计时 · 番茄工作法", null, wrapper);
     }
 
-    // ========================= 番茄钟 =========================
+    // ========================= 番茄钟：25 专注 → 5 短休 → 每 4 轮 15 长休 =========================
 
     private void start() {
         running = true;
@@ -298,7 +325,21 @@ public final class TodayPage extends BasePage {
 
     private void resetTimer() {
         pause();
-        remaining = POMODORO_SECONDS;
+        remaining = phaseTotal;
+        updateTimerUi();
+    }
+
+    /** 切换到某个阶段并重置倒计时，不自动开始。 */
+    private void enter(Phase next) {
+        phase = next;
+        if (next == Phase.SHORT_BREAK) {
+            phaseTotal = SHORT_BREAK_SECONDS;
+        } else if (next == Phase.LONG_BREAK) {
+            phaseTotal = LONG_BREAK_SECONDS;
+        } else {
+            phaseTotal = FOCUS_SECONDS;
+        }
+        remaining = phaseTotal;
         updateTimerUi();
     }
 
@@ -308,11 +349,26 @@ public final class TodayPage extends BasePage {
             updateTimerUi();
             return;
         }
+        finishPhase();
+    }
+
+    private void finishPhase() {
         pause();
-        Store.get().addFocus(25, "番茄钟");
-        remaining = POMODORO_SECONDS;
-        updateTimerUi();
-        context().setStatus("完成一个 25 分钟专注，已记录到今日专注时长");
+        if (phase == Phase.FOCUS) {
+            Store.get().addPomodoro(25, "番茄钟");
+            round++;
+            boolean longBreak = round % ROUNDS_BEFORE_LONG_BREAK == 0;
+            int rest = longBreak ? LONG_BREAK_SECONDS / 60 : SHORT_BREAK_SECONDS / 60;
+            Notify.toast("专注完成", "已完成 " + round + " 个番茄，休息 " + rest + " 分钟");
+            context().setStatus("完成第 " + round + " 个番茄，进入"
+                    + (longBreak ? "长" : "短") + "休息 " + rest + " 分钟");
+            enter(longBreak ? Phase.LONG_BREAK : Phase.SHORT_BREAK);
+            start();   // 休息自动开始，省得每次都点
+        } else {
+            Notify.toast("休息结束", "准备好开始下一轮 25 分钟专注");
+            context().setStatus("休息结束，可以开始下一轮专注");
+            enter(Phase.FOCUS);
+        }
         refresh();
     }
 
@@ -320,6 +376,17 @@ public final class TodayPage extends BasePage {
         int m = remaining / 60;
         int s = remaining % 60;
         timerLabel.setText(String.format("%02d:%02d", m, s));
-        timerBar.setValue(100 - (remaining * 100 / POMODORO_SECONDS));
+        timerBar.setValue(100 - (remaining * 100 / Math.max(1, phaseTotal)));
+        switch (phase) {
+            case SHORT_BREAK:
+                phaseLabel.setText("短休息 5 分钟");
+                break;
+            case LONG_BREAK:
+                phaseLabel.setText("长休息 15 分钟");
+                break;
+            default:
+                phaseLabel.setText("专注 25 分钟");
+                break;
+        }
     }
 }

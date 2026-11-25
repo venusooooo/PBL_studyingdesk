@@ -20,6 +20,11 @@ public final class NotesPage extends BasePage {
     }
 
     @Override
+    protected void onNewAction() {
+        openEditor(null);
+    }
+
+    @Override
     protected void buildContent() {
         Store store = Store.get();
         setHeaderHint("课堂速记、踩坑记录、代码片段都放这里；支持按课程筛选与关键词搜索。");
@@ -179,11 +184,14 @@ public final class NotesPage extends BasePage {
         JButton del = Ui.link("删除");
         del.setForeground(AppTheme.DANGER);
         del.addActionListener(e -> {
-            if (FormDialog.confirm(getView(), "删除笔记", "确定删除《" + n.title + "》吗？")) {
-                Store.get().removeNote(n);
+            Store.get().removeNote(n);
+            renderList();
+            context().setStatus("已删除笔记：" + n.title);
+            Ui.undoToast(getView(), "已删除《" + n.title + "》", () -> {
+                Store.get().undoDelete();
                 renderList();
-                context().setStatus("已删除笔记");
-            }
+                context().setStatus("已撤销删除");
+            });
         });
         actions.add(pin);
         actions.add(edit);

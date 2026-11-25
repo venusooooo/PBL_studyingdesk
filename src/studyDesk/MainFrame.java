@@ -88,6 +88,7 @@ public final class MainFrame extends JFrame implements PageContext {
         initPages();
         initNav();
         initSide();
+        installShortcuts();
 
         contentScroll = new JScrollPane(contentCards);
         contentScroll.setBorder(null);
@@ -107,7 +108,18 @@ public final class MainFrame extends JFrame implements PageContext {
             }
         });
 
-        navigateTo(PageId.TODAY, new HashMap<>());
+        navigateTo(startPage(), new HashMap<>());
+    }
+
+    /** 支持 -Dstudydesk.page=STATS 直接打开某个页面，方便演示与截图。 */
+    private static PageId startPage() {
+        String name = System.getProperty("studydesk.page", "").trim().toUpperCase();
+        for (PageId id : PageId.values()) {
+            if (id.name().equals(name)) {
+                return id;
+            }
+        }
+        return PageId.TODAY;
     }
 
     private void initPages() {
@@ -118,6 +130,7 @@ public final class MainFrame extends JFrame implements PageContext {
                 new ExercisesPage(),
                 new NotesPage(),
                 new PlansPage(),
+                new StatsPage(),
                 new SettingsPage()
         };
         for (BasePage page : all) {
@@ -172,30 +185,17 @@ public final class MainFrame extends JFrame implements PageContext {
         sidePanel.setBorder(BorderFactory.createEmptyBorder(
                 AppTheme.PAGE_PADDING, AppTheme.GRID,
                 AppTheme.PAGE_PADDING, AppTheme.GRID));
-        sidePanel.setPreferredSize(new Dimension(260, 0));
+        sidePanel.setPreferredSize(new Dimension(300, 0));
 
-        JButton toggle = new JButton("收起侧栏");
-        toggle.setFont(AppTheme.FONT_SMALL);
-        toggle.addActionListener(e -> {
-            boolean showing = sidePanel.isVisible();
-            sidePanel.setVisible(!showing);
-            toggle.setText(showing ? "展开侧栏" : "收起侧栏");
-            revalidate();
-            repaint();
-        });
+        sidePanel.add(new AiPanel(this), BorderLayout.CENTER);
+        topBar.onAiToggle(this::setAiVisible);
+    }
 
-        JLabel placeholder = new JLabel("<html><body style='width:200px'>"
-                + "AI 侧栏（界面占位）<br>AI 对话等功能不在本阶段范围内。"
-                + "</body></html>");
-        placeholder.setVerticalAlignment(SwingConstants.TOP);
-        placeholder.setFont(AppTheme.FONT_SMALL);
-        placeholder.setForeground(AppTheme.TEXT_SECONDARY);
-
-        JPanel top = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
-        top.setOpaque(false);
-        top.add(toggle);
-        sidePanel.add(top, BorderLayout.NORTH);
-        sidePanel.add(placeholder, BorderLayout.CENTER);
+    private void setAiVisible(boolean visible) {
+        sidePanel.setVisible(visible);
+        revalidate();
+        repaint();
+        bottomBar.setStatus(visible ? "AI 助手已展开" : "AI 助手已收起");
     }
 
     @Override
@@ -263,5 +263,87 @@ public final class MainFrame extends JFrame implements PageContext {
     @Override
     public void setStatus(String text) {
         bottomBar.setStatus(text);
+    }
+
+    // ========================= 全局快捷键 =========================
+
+    /**
+     * 用 KeyboardFocusManager 而不是 InputMap：
+     * 纯字母/数字快捷键如果在 WHEN_IN_FOCUSED_WINDOW 里绑定，会把输入框里的打字也吞掉。
+     * 这里统一判断焦点是不是文本组件，是就放行。
+     */
+    private void installShortcuts() {
+        KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(e -> {
+            if (e.getID() != java.awt.event.KeyEvent.KEY_PRESSED) {
+                return false;
+            }
+            java.awt.event.KeyEvent key = e;
+            boolean typing = key.getComponent() instanceof javax.swing.text.JTextComponent;
+            int code = key.getKeyCode();
+
+            if (key.isControlDown()) {
+                if (code == java.awt.event.KeyEvent.VK_K) {
+                    openQuickSearch();
+                    return true;
+                }
+                if (code == java.awt.event.KeyEvent.VK_S) {
+                    saveNow();
+                    return true;
+                }
+                if (code == java.awt.event.KeyEvent.VK_Z && !typing) {
+                    undoDelete();
+                    return true;
+                }
+                return false;
+            }
+            if (typing || key.isAltDown() || key.isShiftDown()) {
+                return false;
+            }
+            if (code == java.awt.event.KeyEvent.VK_N) {
+                newItem();
+                return true;
+            }
+            if (code >= java.awt.event.KeyEvent.VK_1 && code <= java.awt.event.KeyEvent.VK_9) {
+                int index = code - java.awt.event.KeyEvent.VK_1;
+                PageId[] all = PageId.values();
+                if (index < all.length) {
+                    navigateTo(all[index], new HashMap<>());
+                    return true;
+                }
+            }
+            return false;
+        });
+    }
+
+    private void openQuickSearch() {
+        new QuickSearchDialog(this).setVisible(true);
+    }
+
+    private void saveNow() {
+        Store.get().save();
+        bottomBar.setSaveState(Store.get().saveState());
+        bottomBar.setStatus("已保存到 " + Store.get().dataFile());
+    }
+
+    private void undoDelete() {
+        Store store = Store.get();
+        if (!store.canUndoDelete()) {
+            bottomBar.setStatus("没有可撤销的删除");
+            return;
+        }
+        String label = store.undoDeleteLabel();
+        store.undoDelete();
+        Page page = pages.get(current);
+        if (page != null) {
+            page.onShow(new HashMap<>());
+        }
+        bottomBar.setStatus("已撤销删除：" + label);
+    }
+
+    private void newItem() {
+        Page page = pages.get(current);
+        if (page != null) {
+            page.onNew();
+        }
     }
 }

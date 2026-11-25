@@ -54,6 +54,10 @@ public final class Store {
     private String termStart = "";
     private String saveState = "未变更";
 
+    /** 删除前的整库快照，供 5 秒内撤销；只保留最近一次删除。 */
+    private String undoSnapshot;
+    private String undoLabel = "";
+
     private Store() {
         dir = resolveDataDir();
         file = dir.resolve("data.json");
@@ -157,10 +161,10 @@ public final class Store {
         fireChanged();
     }
 
-    /** 只落盘不刷新（例如修改纯展示用字段）。 */
-    public void save() {
+    /** 把内存中的全部数据整理成待序列化的 Map，save 与撤销快照共用。 */
+    private Map<String, Object> toRoot() {
         Map<String, Object> root = new LinkedHashMap<>();
-        root.put("version", 1);
+        root.put("version", 2);
         root.put("seq", seq);
         root.put("termStart", termStart);
         root.put("courses", mapList(courses, Course::toMap));
@@ -170,7 +174,12 @@ public final class Store {
         root.put("tasks", mapList(tasks, Task::toMap));
         root.put("plans", mapList(plans, Plan::toMap));
         root.put("focus", mapList(focusRecords, FocusRecord::toMap));
-        byte[] bytes = Json.write(root).getBytes(StandardCharsets.UTF_8);
+        return root;
+    }
+
+    /** 只落盘不刷新（例如修改纯展示用字段）。 */
+    public void save() {
+        byte[] bytes = Json.write(toRoot()).getBytes(StandardCharsets.UTF_8);
         Path tmp = dir.resolve("data.json.tmp");
         try {
             Files.createDirectories(dir);
@@ -221,9 +230,41 @@ public final class Store {
             recover();
             return;
         }
+        snapshotDaily();
         if (courses.isEmpty() && lessons.isEmpty() && tasks.isEmpty()) {
             seed();
             save();
+        }
+    }
+
+    /**
+     * 每天首次启动留一份只读快照到 backups/ 下，保留最近 7 份。
+     * 和 data.bak.json 不同，它防的是"改错了想找回上周的数据"。
+     */
+    private void snapshotDaily() {
+        try {
+            if (!Files.exists(file)) {
+                return;
+            }
+            Path backupDir = dir.resolve("backups");
+            Files.createDirectories(backupDir);
+            Path today = backupDir.resolve("data-" + Dates.today() + ".json");
+            if (Files.exists(today)) {
+                return;
+            }
+            Files.copy(file, today, StandardCopyOption.REPLACE_EXISTING);
+            List<Path> all = new ArrayList<>();
+            try (java.util.stream.Stream<Path> stream = Files.list(backupDir)) {
+                stream.filter(p -> p.getFileName().toString().startsWith("data-")
+                        && p.getFileName().toString().endsWith(".json"))
+                        .forEach(all::add);
+            }
+            all.sort((a, b) -> a.getFileName().toString().compareTo(b.getFileName().toString()));
+            while (all.size() > 7) {
+                Files.deleteIfExists(all.remove(0));
+            }
+        } catch (IOException e) {
+            System.err.println("生成每日快照失败（不影响使用）：" + e);
         }
     }
 
@@ -253,7 +294,16 @@ public final class Store {
     /** 解析指定文件并填充内存，成功返回 true；失败时内存可能被部分填充，由调用方 clearMemory()。 */
     private boolean readFrom(Path source) {
         try {
-            String text = Files.readString(source, StandardCharsets.UTF_8);
+            return parseText(Files.readString(source, StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            System.err.println("读取 " + source.getFileName() + " 失败：" + e);
+            return false;
+        }
+    }
+
+    /** 解析 JSON 文本并填充内存；撤销删除也复用这条路径。 */
+    private boolean parseText(String text) {
+        try {
             Map<String, Object> root = Json.map(Json.parse(text));
             seq = Json.lng(root, "seq", 1);
             termStart = Json.str(root, "termStart", "");
@@ -282,7 +332,7 @@ public final class Store {
             saveState = "已加载本地数据";
             return true;
         } catch (Exception e) {
-            System.err.println("读取 " + source.getFileName() + " 失败：" + e);
+            System.err.println("数据解析失败：" + e);
             return false;
         }
     }
@@ -329,6 +379,7 @@ public final class Store {
     }
 
     public void removeCourse(Course c) {
+        rememberUndo("课程《" + c.name + "》");
         courses.remove(c);
         lessons.removeIf(l -> l.courseId == c.id);
         exercises.forEach(e -> {
@@ -378,6 +429,7 @@ public final class Store {
     }
 
     public void removeLesson(Lesson l) {
+        rememberUndo("课时");
         lessons.remove(l);
         changed();
     }
@@ -402,6 +454,7 @@ public final class Store {
     }
 
     public void removeExercise(Exercise e) {
+        rememberUndo("错题《" + e.title + "》");
         exercises.remove(e);
         changed();
     }
@@ -454,6 +507,7 @@ public final class Store {
     }
 
     public void removeNote(Note n) {
+        rememberUndo("笔记《" + n.title + "》");
         notes.remove(n);
         changed();
     }
@@ -475,6 +529,7 @@ public final class Store {
     }
 
     public void removeTask(Task t) {
+        rememberUndo("任务《" + t.title + "》");
         tasks.remove(t);
         changed();
     }
@@ -538,6 +593,7 @@ public final class Store {
     }
 
     public void removePlan(Plan p) {
+        rememberUndo("计划《" + p.title + "》");
         plans.remove(p);
         tasks.forEach(t -> {
             if (t.planId == p.id) {
@@ -567,6 +623,28 @@ public final class Store {
     public void addFocus(int minutes, String label) {
         focusRecords.add(new FocusRecord(Dates.today(), minutes, label));
         changed();
+    }
+
+    /** 番茄钟完成一个 25 分钟专注时调用。 */
+    public void addPomodoro(int minutes, String label) {
+        FocusRecord f = new FocusRecord(Dates.today(), minutes, label);
+        f.pomodoro = true;
+        focusRecords.add(f);
+        changed();
+    }
+
+    public int pomodoroToday() {
+        int count = 0;
+        for (FocusRecord f : focusRecords) {
+            if (f.pomodoro && Dates.isToday(f.date)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public List<FocusRecord> focusRecords() {
+        return Collections.unmodifiableList(focusRecords);
     }
 
     public int focusMinutes(String isoDate) {
@@ -618,6 +696,42 @@ public final class Store {
         return (int) (days / 7) + 1;
     }
 
+    // ========================= 删除撤销 =========================
+
+    /**
+     * 每次删除前调用：把整库序列化一份留在内存里。
+     * 数据量是"一个人的学习记录"（百 KB 以内），比给每个实体写反向操作简单且不会漏掉级联。
+     */
+    private void rememberUndo(String label) {
+        undoSnapshot = Json.write(toRoot());
+        undoLabel = label;
+    }
+
+    public boolean canUndoDelete() {
+        return undoSnapshot != null;
+    }
+
+    public String undoDeleteLabel() {
+        return undoLabel;
+    }
+
+    /** 恢复删除前的数据；只保留最近一次删除，重复调用无效。 */
+    public void undoDelete() {
+        String text = undoSnapshot;
+        if (text == null) {
+            return;
+        }
+        undoSnapshot = null;
+        clearMemory();
+        if (!parseText(text)) {
+            saveState = "撤销失败：快照无法解析";
+            fireChanged();
+            return;
+        }
+        save();
+        fireChanged();
+    }
+
     // ========================= 维护操作 =========================
 
     private void clearMemory() {
@@ -629,6 +743,8 @@ public final class Store {
         plans.clear();
         focusRecords.clear();
         seq = 1;
+        // 清空/重置后不能再撤销回旧数据
+        undoSnapshot = null;
     }
 
     public void clearAll() {

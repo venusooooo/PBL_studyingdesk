@@ -8,6 +8,8 @@ public final class FocusRecord {
     public String date = "";
     public int minutes;
     public String label = "";
+    /** 是否由番茄钟完成产生，用于统计"今日完成 N 个番茄"。 */
+    public boolean pomodoro;
 
     public FocusRecord() {
     }
@@ -23,6 +25,7 @@ public final class FocusRecord {
         m.put("date", date);
         m.put("minutes", minutes);
         m.put("label", label);
+        m.put("pomodoro", pomodoro);
         return m;
     }
 
@@ -31,6 +34,7 @@ public final class FocusRecord {
         f.date = Json.str(m, "date", "");
         f.minutes = Json.integer(m, "minutes", 0);
         f.label = Json.str(m, "label", "");
+        f.pomodoro = Json.bool(m, "pomodoro", false);
         return f;
     }
 }

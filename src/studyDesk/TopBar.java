@@ -10,7 +10,7 @@ public final class TopBar extends JPanel {
 
     private final JLabel title = new JLabel();
     private final JLabel week = new JLabel("第 1 周");
-    private final JToggleButton aiSwitch = new JToggleButton("AI 关闭");
+    private final JToggleButton aiSwitch = new JToggleButton("AI 开启");
 
     public TopBar() {
         setLayout(new BorderLayout(AppTheme.GRID, 0));
@@ -30,13 +30,22 @@ public final class TopBar extends JPanel {
         week.setFont(AppTheme.FONT_BODY);
         week.setForeground(AppTheme.TEXT_SECONDARY);
         aiSwitch.setFont(AppTheme.FONT_SMALL);
-        aiSwitch.setEnabled(false);
+        aiSwitch.setSelected(true);
         aiSwitch.setMargin(new Insets(3, 12, 3, 12));
-        aiSwitch.setPreferredSize(new Dimension(78, 26));
-        aiSwitch.setToolTipText("AI 功能不在本阶段范围内");
+        aiSwitch.setPreferredSize(new Dimension(84, 26));
+        aiSwitch.setToolTipText("显示 / 隐藏右侧 AI 助手");
         right.add(week);
         right.add(aiSwitch);
         add(right, BorderLayout.EAST);
+    }
+
+    /** 由主窗口注册：开关切换时同步显示 / 隐藏侧栏。 */
+    public void onAiToggle(java.util.function.Consumer<Boolean> handler) {
+        aiSwitch.addActionListener(e -> {
+            boolean on = aiSwitch.isSelected();
+            aiSwitch.setText(on ? "AI 开启" : "AI 关闭");
+            handler.accept(on);
+        });
     }
 
     public void setPageTitle(String text) {

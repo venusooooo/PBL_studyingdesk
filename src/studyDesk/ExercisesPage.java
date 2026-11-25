@@ -30,6 +30,11 @@ public final class ExercisesPage extends BasePage {
     }
 
     @Override
+    protected void onNewAction() {
+        openEditor(null);
+    }
+
+    @Override
     protected void buildContent() {
         Store store = Store.get();
         setHeaderHint("答错的题会进入复习队列，按 1 / 2 / 4 / 7 / 15 天的间隔自动安排下次复习。");
@@ -221,11 +226,14 @@ public final class ExercisesPage extends BasePage {
         JButton del = Ui.link("删除");
         del.setForeground(AppTheme.DANGER);
         del.addActionListener(e2 -> {
-            if (FormDialog.confirm(getView(), "删除错题", "确定删除《" + e.title + "》吗？")) {
-                Store.get().removeExercise(e);
+            Store.get().removeExercise(e);
+            renderList();
+            context().setStatus("已删除错题：" + e.title);
+            Ui.undoToast(getView(), "已删除《" + e.title + "》", () -> {
+                Store.get().undoDelete();
                 renderList();
-                context().setStatus("已删除错题");
-            }
+                context().setStatus("已撤销删除");
+            });
         });
         actions.add(review);
         actions.add(edit);

@@ -8,6 +8,7 @@ public enum PageId {
     EXERCISES("习题与错题"),
     NOTES("学习笔记"),
     PLANS("学习计划与任务"),
+    STATS("学习统计"),
     SETTINGS("系统设置");
 
     private final String label;

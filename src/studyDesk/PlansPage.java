@@ -18,6 +18,11 @@ public final class PlansPage extends BasePage {
     }
 
     @Override
+    protected void onNewAction() {
+        newTask(null);
+    }
+
+    @Override
     protected void buildContent() {
         Store store = Store.get();
         setHeaderHint("计划是阶段目标，任务是可勾选的小步骤；计划进度 = 已完成任务 / 关联任务。");
@@ -149,6 +154,11 @@ public final class PlansPage extends BasePage {
                     "删除《" + p.title + "》后，它的 " + planTasks.size() + " 个任务会变成独立任务，不会被删除。")) {
                 store.removePlan(p);
                 refresh();
+                Ui.undoToast(getView(), "已删除计划《" + p.title + "》", () -> {
+                    Store.get().undoDelete();
+                    refresh();
+                    context().setStatus("已撤销删除");
+                });
             }
         });
         actions.add(addTask);
@@ -282,10 +292,14 @@ public final class PlansPage extends BasePage {
         JButton del = Ui.link("删除");
         del.setForeground(AppTheme.DANGER);
         del.addActionListener(e -> {
-            if (FormDialog.confirm(getView(), "删除任务", "确定删除任务「" + t.title + "」吗？")) {
-                Store.get().removeTask(t);
+            Store.get().removeTask(t);
+            context().setStatus("已删除任务：" + t.title);
+            Ui.undoToast(getView(), "已删除任务「" + t.title + "」", () -> {
+                Store.get().undoDelete();
                 refresh();
-            }
+                context().setStatus("已撤销删除");
+            });
+            refresh();
         });
         actions.add(edit);
         actions.add(del);

@@ -1,8 +1,12 @@
 package studyDesk;
 
 import java.awt.*;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import javax.swing.*;
 
 /**
@@ -11,11 +15,26 @@ import javax.swing.*;
  */
 public abstract class BasePage implements Page {
     private final JPanel root = new JPanel(new BorderLayout());
-    private final JPanel cardGrid = new JPanel(new GridBagLayout());
+    private final JPanel cardGrid = new JPanel();
     private final JLabel headerTitle = new JLabel();
     private final JLabel headerHint = new JLabel();
+    /** 待排版的卡片，按行号归组；buildContent 结束后统一装进 cardGrid。 */
+    private final Map<Integer, List<CardSlot>> pending = new TreeMap<>();
     private PageContext context;
     private boolean built;
+
+    /** 一张卡片在网格里的位置。 */
+    private static final class CardSlot {
+        final JComponent card;
+        final int col;
+        final int span;
+
+        CardSlot(JComponent card, int col, int span) {
+            this.card = card;
+            this.col = col;
+            this.span = span;
+        }
+    }
 
     protected BasePage() {
         root.setBackground(AppTheme.BG);
@@ -38,6 +57,8 @@ public abstract class BasePage implements Page {
         gridWrapper.setBorder(BorderFactory.createEmptyBorder(
                 AppTheme.GRID * 2, AppTheme.PAGE_PADDING,
                 AppTheme.PAGE_PADDING, AppTheme.PAGE_PADDING));
+        // 行与行纵向堆叠、各自保持自然高度：字段多的页面靠滚动查看，而不是被压扁。
+        cardGrid.setLayout(new BoxLayout(cardGrid, BoxLayout.Y_AXIS));
         cardGrid.setBackground(AppTheme.BG);
         gridWrapper.add(cardGrid, BorderLayout.NORTH);
         root.add(gridWrapper, BorderLayout.CENTER);
@@ -79,16 +100,35 @@ public abstract class BasePage implements Page {
 
     /** 指定跨列数，用于需要横跨整行（如统计条）的卡片。 */
     protected final void addCard(JComponent card, int row, int col, int colSpan) {
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.gridx = col;
-        gbc.gridy = row;
-        gbc.gridwidth = Math.max(1, colSpan);
-        gbc.weightx = 1;
-        gbc.fill = GridBagConstraints.BOTH;
-        gbc.anchor = GridBagConstraints.NORTHWEST;
-        gbc.insets = new Insets(AppTheme.CARD_GAP / 2, AppTheme.CARD_GAP / 2,
-                AppTheme.CARD_GAP / 2, AppTheme.CARD_GAP / 2);
-        cardGrid.add(card, gbc);
+        pending.computeIfAbsent(row, key -> new ArrayList<>())
+                .add(new CardSlot(card, Math.max(0, col), Math.max(1, colSpan)));
+    }
+
+    /**
+     * 把收集到的卡片按行装进内容区。
+     * 每行用 GridLayout 平分宽度、行高由内容决定。这里刻意不用 GridBagLayout：
+     * 它在空间不足时会把卡片压成几像素高（图表和课表都被压没过）。
+     */
+    private void materialize() {
+        cardGrid.removeAll();
+        for (List<CardSlot> rowCards : pending.values()) {
+            rowCards.sort(Comparator.comparingInt(slot -> slot.col));
+            JPanel row = new JPanel(new GridLayout(1, rowCards.size(), AppTheme.CARD_GAP, 0));
+            row.setOpaque(false);
+            for (CardSlot slot : rowCards) {
+                row.add(slot.card);
+            }
+            row.setAlignmentX(Component.LEFT_ALIGNMENT);
+            // 行高只由内容决定：既不被拉高，也不允许 BoxLayout 在空间不足时压扁行。
+            Dimension rowHeight = new Dimension(0, row.getPreferredSize().height);
+            row.setMinimumSize(rowHeight);
+            row.setMaximumSize(new Dimension(Integer.MAX_VALUE, rowHeight.height));
+            if (cardGrid.getComponentCount() > 0) {
+                cardGrid.add(Box.createVerticalStrut(AppTheme.CARD_GAP));
+            }
+            cardGrid.add(row);
+        }
+        pending.clear();
     }
 
     /** 子类在此构建自己的卡片内容。会被反复调用，因此只创建组件、不写一次性状态。 */
@@ -98,10 +138,20 @@ public abstract class BasePage implements Page {
     protected void onShowPage(Map<String, Object> params) {
     }
 
+    /** 子类覆写后，在主窗口按 N 即可直接打开该页的"新建"弹窗。 */
+    protected void onNewAction() {
+    }
+
+    @Override
+    public final void onNew() {
+        onNewAction();
+    }
+
     @Override
     public final void onShow(Map<String, Object> params) {
         if (!built) {
             buildContent();
+            materialize();
             built = true;
         } else {
             // 数据可能在别的页面被改过，每次进入都重画一遍，保证看到的是最新数据。
@@ -119,8 +169,10 @@ public abstract class BasePage implements Page {
     }
 
     private void rebuild() {
+        pending.clear();
         cardGrid.removeAll();
         buildContent();
+        materialize();
         cardGrid.revalidate();
         cardGrid.repaint();
         root.revalidate();

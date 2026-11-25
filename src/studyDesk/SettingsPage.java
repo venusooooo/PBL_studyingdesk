@@ -110,10 +110,11 @@ public final class SettingsPage extends BasePage {
         addCard(Ui.card("数据维护", null, dangerRow), 3, 0);
 
         // ---------- 关于 ----------
-        JLabel about = Ui.wrap("StudyDesk v0.2（PBL 课程实践）\n"
-                + "技术栈：JDK 17+ / Java Swing / AWT，零第三方依赖，javac 直接编译。\n"
+        JLabel about = Ui.wrap("StudyDesk v0.3（PBL 课程实践）\n"
+                + "技术栈：JDK 11+ / Java Swing / AWT，零第三方依赖，javac 直接编译。\n"
                 + "架构：Page 契约 + BasePage 卡片页面 + PageContext 跳转 + Store 单例数据层。\n"
-                + "本版本已实现：课表、课程、错题复习、笔记、计划任务、专注计时与本地持久化。", 540);
+                + "已实现：课表（单双周 / 导出 ics）、课程、错题复习、笔记、计划任务、番茄钟、\n"
+                + "学习统计、AI 助手、全局搜索与本地持久化。", 540);
         addCard(Ui.card("关于", null, about), 4, 0);
     }
 
